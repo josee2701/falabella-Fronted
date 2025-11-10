@@ -1,77 +1,184 @@
-import React, { useState, useEffect } from 'react'; 
-import './UserTable.css';
+import React, { useState, useEffect } from "react";
+import "./UserTable.css";
 
-const API_URL = 'http://localhost:8000/api/clientes/'; 
+const API_URL = "http://localhost:8000/api/clientes/";
+const API_EXPORT_URL = API_URL + "download-csv/";
+const API_DOC_TYPES_URL = "http://localhost:8000/api/tipos-documento/";
+
 
 function UserTable() {
   const [users, setUsers] = useState([]);
-  const [isLoading, setIsLoading] = useState(true); 
-  const [error, setError] = useState(null); 
-  
-  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch(API_URL);
-        
-        if (!response.ok) {
-          throw new Error(`Error HTTP: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        setUsers(data);
-        
-      } catch (e) {
-        console.error("Failed to fetch users:", e);
-        setError(e.message)
-      } finally {
-        setIsLoading(false);
+  // 1. ESTADOS FALTANTES: Necesitas esto para controlar los filtros
+  const [docTypes, setDocTypes] = useState([]);
+  const [selectedDocType, setSelectedDocType] = useState("");
+  const [docNumber, setDocNumber] = useState("");
+
+  // 2. REFACTORIZAMOS fetchUsers: Para que pueda ser reutilizada
+  const fetchUsers = async (url) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status} ${response.statusText}`);
       }
-    };
-
-    fetchUsers(); 
-  }, []); 
-
-  const handleCreateUser = () => {
-    console.log('Abriendo modal para crear usuario...');
+      const data = await response.json();
+      setUsers(data);
+    } catch (e) {
+      console.error("Failed to fetch users:", e);
+      setError(e.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const filteredUsers = users.filter(user =>
-    (user.nombre && user.nombre.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (user.apellido && user.apellido.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (user.correo && user.correo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (user.numero_documento && user.numero_documento.includes(searchTerm))
-  );
+  // 3. useEffect INICIAL (modificado): Llama a la nueva función
+  useEffect(() => {
+    fetchUsers(API_URL); // Carga inicial de todos los usuarios
+  }, []);
 
-  // 6. Renderizado condicional para Carga y Error
+  // 4. NUEVO useEffect: Para cargar los tipos de documento
+  useEffect(() => {
+    const fetchDocTypes = async () => {
+      try {
+        const response = await fetch(API_DOC_TYPES_URL);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar los tipos de documento");
+        }
+        const data = await response.json();
+        setDocTypes(data);
+      } catch (e) {
+        console.error(e.message);
+      }
+    };
+    fetchDocTypes();
+  }, []);
+
+
+  const handleExport = async () => {
+    setIsExporting(true);
+
+    const params = new URLSearchParams();
+    if (selectedDocType) {
+      params.append('tipo_documento', selectedDocType);
+    }
+    if (docNumber) {
+      params.append('numero_documento', docNumber);
+    }
+
+    const exportUrl = `${API_EXPORT_URL}?${params.toString()}`;
+    
+    console.log("Exportando con URL:", exportUrl);
+
+    try {
+      const response = await fetch(exportUrl);
+
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status} ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "usuarios.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+    } catch (e) {
+      console.error("Error al exportar:", e);
+      setError("No se pudo descargar el archivo.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  
+  // 5. FUNCIONES FALTANTES: Para los botones de búsqueda
+  const handleSearch = () => {
+    const params = new URLSearchParams();
+
+    // Asegúrate que 'tipo_documento' y 'numero_documento'
+    // coincidan con los nombres que espera tu API de Django
+    if (selectedDocType) {
+      params.append('tipo_documento', selectedDocType);
+    }
+    if (docNumber) {
+      params.append('numero_documento', docNumber);
+    }
+
+    const searchUrl = `${API_URL}?${params.toString()}`;
+    console.log("Buscando con URL:", searchUrl);
+    fetchUsers(searchUrl);
+  };
+
+  const clearFilters = () => {
+    setSelectedDocType("");
+    setDocNumber("");
+    fetchUsers(API_URL); // Vuelve a cargar todos los usuarios
+  };
+
+
+  // ... Renderizado condicional (está bien) ...
   if (isLoading) {
     return <div className="user-table-container loading">Cargando usuarios...</div>;
   }
-
   if (error) {
     return <div className="user-table-container error">Error al cargar datos: {error}</div>;
   }
 
-  // 7. Renderizado principal (cuando ya hay datos)
+  // ... Renderizado principal ...
   return (
     <div className="user-table-container">
-      
-      {/* --- Controles Superiores (Buscador y Botón) --- */}
       <div className="table-controls">
+        
+        {/* Dropdown para Tipo de Documento */}
+        <select
+          className="filter-select"
+          value={selectedDocType}
+          onChange={(e) => setSelectedDocType(e.target.value)}
+        >
+          <option value="">Seleccionar tipo...</option>
+          {docTypes.map((type) => (
+            <option key={type.id} value={type.id}> {/* <-- ¡Cámbialo a type.id! */}
+              {type.nombre}
+            </option>
+          ))}
+        </select>
+
+        {/* Input para Número de Documento */}
         <input
           type="text"
-          placeholder="Buscar por documento, nombre, correo..."
+          placeholder="Número de documento"
           className="search-input"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          value={docNumber}
+          onChange={(e) => setDocNumber(e.target.value)}
         />
-        <button className="create-button" onClick={handleCreateUser}>
-          Crear Usuario
+
+        {/* Botones de acción */}
+        <button className="search-button" onClick={handleSearch}>
+          Buscar
         </button>
+        <button className="clear-button" onClick={clearFilters}>
+          Limpiar
+        </button>
+
+        <div className="table-actions">
+          <button
+            className="export-button"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            {isExporting ? "Exportando..." : "Exportar CSV"}
+          </button>
+        </div>
       </div>
 
-      {/* --- Tabla de Datos --- */}
       <table className="user-table">
         <thead>
           <tr>
@@ -83,11 +190,11 @@ function UserTable() {
           </tr>
         </thead>
         <tbody>
-          {filteredUsers.length > 0 ? (
-            filteredUsers.map((user) => (
-              // 8. Asegúrate que las propiedades (user.id, user.nombre)
-              // coincidan con las de tu API
-              <tr key={user.id}> 
+          {/* 6. CORRECCIÓN EN LA TABLA:
+              Debe ser 'users.length' y 'users.map', NO 'filteredUsers' */}
+          {users.length > 0 ? (
+            users.map((user) => (
+              <tr key={user.id}>
                 <td>{user.numero_documento}</td>
                 <td>{user.nombre}</td>
                 <td>{user.apellido}</td>
@@ -98,8 +205,7 @@ function UserTable() {
           ) : (
             <tr>
               <td colSpan="5" className="no-results">
-                {/* Mensaje diferente si no hay usuarios vs. no hay resultados de búsqueda */}
-                {users.length === 0 ? "No hay usuarios registrados." : "No se encontraron resultados."}
+                No se encontraron resultados.
               </td>
             </tr>
           )}
