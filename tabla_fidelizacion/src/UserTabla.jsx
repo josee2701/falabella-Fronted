@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import "./UserTable.css";
 
 const API_URL = "http://localhost:8000/api/clientes/";
-const API_EXPORT_URL = API_URL + "download-csv/";
+const API_EXPORT_URL = "http://localhost:8000/api/download/";
 const API_DOC_TYPES_URL = "http://localhost:8000/api/tipos-documento/";
 
 
@@ -12,12 +12,11 @@ function UserTable() {
   const [error, setError] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // 1. ESTADOS FALTANTES: Necesitas esto para controlar los filtros
   const [docTypes, setDocTypes] = useState([]);
   const [selectedDocType, setSelectedDocType] = useState("");
   const [docNumber, setDocNumber] = useState("");
+  const [exportFormat, setExportFormat] = useState("csv");
 
-  // 2. REFACTORIZAMOS fetchUsers: Para que pueda ser reutilizada
   const fetchUsers = async (url) => {
     setIsLoading(true);
     setError(null);
@@ -36,12 +35,10 @@ function UserTable() {
     }
   };
 
-  // 3. useEffect INICIAL (modificado): Llama a la nueva función
   useEffect(() => {
-    fetchUsers(API_URL); // Carga inicial de todos los usuarios
+    fetchUsers(API_URL); 
   }, []);
 
-  // 4. NUEVO useEffect: Para cargar los tipos de documento
   useEffect(() => {
     const fetchDocTypes = async () => {
       try {
@@ -63,48 +60,48 @@ function UserTable() {
     setIsExporting(true);
 
     const params = new URLSearchParams();
-    if (selectedDocType) {
-      params.append('tipo_documento', selectedDocType);
-    }
-    if (docNumber) {
-      params.append('numero_documento', docNumber);
-    }
+    if (selectedDocType) params.append('tipo_documento', selectedDocType);
+    if (docNumber) params.append('numero_documento', docNumber);
+    
+    params.append('formato', exportFormat);
 
     const exportUrl = `${API_EXPORT_URL}?${params.toString()}`;
-    
-    console.log("Exportando con URL:", exportUrl);
+    console.log("Exporting with URL:", exportUrl);
 
     try {
       const response = await fetch(exportUrl);
-
-      if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status} ${response.statusText}`);
-      }
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "usuarios.csv";
+
+      const extensionMap = {
+        'csv': 'csv',
+        'xlsx': 'xlsx',
+        'txt': 'txt'
+      };
+      const ext = extensionMap[exportFormat] || 'csv';
+      a.download = `usuarios_export.${ext}`;
+      
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
 
     } catch (e) {
-      console.error("Error al exportar:", e);
-      setError("No se pudo descargar el archivo.");
+      console.error("Export failed:", e);
+      alert("Failed to export file"); 
     } finally {
       setIsExporting(false);
     }
   };
   
-  // 5. FUNCIONES FALTANTES: Para los botones de búsqueda
   const handleSearch = () => {
     const params = new URLSearchParams();
 
-    // Asegúrate que 'tipo_documento' y 'numero_documento'
-    // coincidan con los nombres que espera tu API de Django
+  
     if (selectedDocType) {
       params.append('tipo_documento', selectedDocType);
     }
@@ -120,11 +117,10 @@ function UserTable() {
   const clearFilters = () => {
     setSelectedDocType("");
     setDocNumber("");
-    fetchUsers(API_URL); // Vuelve a cargar todos los usuarios
+    fetchUsers(API_URL); 
   };
 
 
-  // ... Renderizado condicional (está bien) ...
   if (isLoading) {
     return <div className="user-table-container loading">Cargando usuarios...</div>;
   }
@@ -132,12 +128,10 @@ function UserTable() {
     return <div className="user-table-container error">Error al cargar datos: {error}</div>;
   }
 
-  // ... Renderizado principal ...
   return (
     <div className="user-table-container">
       <div className="table-controls">
         
-        {/* Dropdown para Tipo de Documento */}
         <select
           className="filter-select"
           value={selectedDocType}
@@ -145,7 +139,7 @@ function UserTable() {
         >
           <option value="">Seleccionar tipo...</option>
           {docTypes.map((type) => (
-            <option key={type.id} value={type.id}> {/* <-- ¡Cámbialo a type.id! */}
+            <option key={type.id} value={type.id}> 
               {type.nombre}
             </option>
           ))}
@@ -169,13 +163,26 @@ function UserTable() {
         </button>
 
         <div className="table-actions">
-          <button
-            className="export-button"
-            onClick={handleExport}
-            disabled={isExporting}
-          >
-            {isExporting ? "Exportando..." : "Exportar CSV"}
-          </button>
+          {/* NUEVO: Grupo de Exportación */}
+          <div className="export-group">
+            <select 
+              className="export-select"
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              disabled={isExporting}
+            >
+              <option value="csv">CSV</option>
+              <option value="xlsx">Excel</option>
+              <option value="txt">TXT</option>
+            </select>
+            <button
+              className="export-button"
+              onClick={handleExport}
+              disabled={isExporting}
+            >
+              {isExporting ? "..." : "Exportar"}
+            </button>
+          </div>
         </div>
       </div>
 
